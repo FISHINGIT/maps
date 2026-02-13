@@ -1,0 +1,142 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Angling Trust Events (2025–26) with EA Areas</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+  <style>
+    html, body, #map { height: 100%; margin: 0; }
+    .legend {
+      position: absolute; left: 18px; bottom: 18px; z-index: 9999;
+      background: white; padding: 14px 16px; border-radius: 12px;
+      border: 2px solid rgba(0,0,0,0.25); box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+      font-family: Arial, sans-serif; max-width: 320px;
+    }
+    .legend h4 { margin: 0 0 8px 0; }
+    .legend .row { margin: 6px 0; display:flex; align-items:center; gap:10px; }
+    .dot { width: 12px; height: 12px; border-radius: 50%; background: #003366; }
+    .clusterbox { width: 20px; height: 14px; border-radius: 6px; background: #ff6a00; }
+    .hint {
+      position:absolute; top: 12px; left: 50%; transform: translateX(-50%);
+      background: rgba(255,255,255,0.92); padding: 8px 12px; border-radius: 10px;
+      border: 1px solid rgba(0,0,0,0.15); font-family: Arial, sans-serif;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.15); z-index: 9999;
+    }
+  </style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="hint">
+  Tip: Use the layer control (top-right) to switch between <b>clustered</b> and <b>individual</b> events.
+</div>
+
+<div class="legend">
+  <h4>Map legend</h4>
+  <div class="row"><span class="dot"></span> Event location (one dot per event)</div>
+  <div class="row"><span class="clusterbox"></span> Cluster shows <b>number of events in this area</b></div>
+  <div style="font-size:12px;color:#333;margin-top:8px;">
+    Zoom in to expand clusters. EA boundaries can be toggled on/off.
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script>
+  const map = L.map('map', { zoomControl: true }).setView([52.7, -1.5], 6);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 18,
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  const eaStyle = { color: '#1f77ff', weight: 2, fillOpacity: 0.05 };
+  const eaLayer = L.geoJSON(null, {
+    style: () => eaStyle,
+    onEachFeature: (f, layer) => {
+      const props = f.properties || {};
+      const name = props.LONG_NAME || props.SHORT_NAME || props.Name || Object.values(props)[0];
+      if (name) layer.bindTooltip('EA Area: ' + name);
+    }
+  });
+
+  const clustered = L.markerClusterGroup({
+    disableClusteringAtZoom: 8,
+    iconCreateFunction: function(cluster) {
+      const count = cluster.getChildCount();
+      const html = `
+        <div style="background:#ff6a00;color:white;border-radius:26px;padding:10px 14px;border:3px solid white;
+                    font-weight:700;box-shadow:0 0 6px rgba(0,0,0,0.4);">
+          <div style="font-size:11px;line-height:12px;">Events in this area</div>
+          <div style="text-align:center;font-size:18px;line-height:20px;">${count}</div>
+        </div>`;
+      return L.divIcon({ html, className: 'at-cluster', iconSize: [140, 54] });
+    }
+  });
+
+  const individual = L.layerGroup();
+
+  function popupHtml(p) {
+    const lines = [];
+    if (p.event_name) lines.push(`<b>${p.event_name}</b>`);
+    if (p.event_date) lines.push(`Date: ${p.event_date}`);
+    if (p.event_type) lines.push(`Type: ${p.event_type}`);
+    if (p.region) lines.push(`Region: ${p.region}`);
+    if (p.postcode) lines.push(`Postcode: ${p.postcode}`);
+    if (p.attendees_rows != null) lines.push(`Attendees (rows): ${p.attendees_rows}`);
+    return lines.join('<br>');
+  }
+
+  async function loadGeoJSON(url) {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('Failed to load ' + url + ' (' + resp.status + ')');
+    return await resp.json();
+  }
+
+  (async function init() {
+    try {
+      const [ea, events] = await Promise.all([
+        loadGeoJSON('EA_areas.geojson'),
+        loadGeoJSON('AT_events_2025-26_points.geojson')
+      ]);
+
+      eaLayer.addData(ea);
+
+      events.features.forEach(ft => {
+        const [lon, lat] = ft.geometry.coordinates;
+        const p = ft.properties || {};
+        const m1 = L.circleMarker([lat, lon], {
+          radius: 4, color: '#003366', weight: 1, fillColor: '#003366', fillOpacity: 0.9
+        }).bindPopup(popupHtml(p), { maxWidth: 380 });
+
+        const m2 = L.circleMarker([lat, lon], {
+          radius: 5, color: '#003366', weight: 1, fillColor: '#003366', fillOpacity: 0.9
+        }).bindPopup(popupHtml(p), { maxWidth: 380 });
+
+        clustered.addLayer(m1);
+        individual.addLayer(m2);
+      });
+
+      clustered.addTo(map);
+      eaLayer.addTo(map);
+
+      L.control.layers(null, {
+        "Environment Agency Areas": eaLayer,
+        "Events (clustered)": clustered,
+        "Events (individual)": individual
+      }, { collapsed: false }).addTo(map);
+
+      const bounds = clustered.getBounds();
+      if (bounds.isValid()) map.fitBounds(bounds.pad(0.1));
+
+    } catch (err) {
+      console.error(err);
+      alert("Map failed to load data files. Make sure EA_areas.geojson and AT_events_2025-26_points.geojson are in the SAME folder as the HTML file on GitHub Pages.");
+    }
+  })();
+</script>
+</body>
+</html>
