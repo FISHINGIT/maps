@@ -1,0 +1,9 @@
+{
+  "name": "growth-os-for-claude-cowork-quick-start",
+  "version": "1.0.0",
+  "description": "Guided setup for Growth OS for Claude Cowork — builds your AI workspace with offers, persona, and morning routine in one session",
+  "author": {
+    "name": "theCLICK"
+  },
+  "keywords": ["growth-os", "marketing", "quick-start", "onboarding"]
+}
